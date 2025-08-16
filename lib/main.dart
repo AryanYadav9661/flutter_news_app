@@ -1,11 +1,15 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-void main() {
+import 'services/news_service.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Load .env if present (local dev). On Codemagic we’ll also support dart-define.
+  await dotenv.load(fileName: ".env", isOptional: true);
   runApp(const NewsApp());
 }
 
@@ -18,153 +22,134 @@ class NewsApp extends StatelessWidget {
       title: 'Pulse News',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.indigo,
         useMaterial3: true,
+        colorSchemeSeed: Colors.deepPurple,
       ),
-      home: const HomePage(),
+      home: const HeadlinesScreen(),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+class HeadlinesScreen extends StatefulWidget {
+  const HeadlinesScreen({super.key});
+
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<HeadlinesScreen> createState() => _HeadlinesScreenState();
 }
 
-class _HomePageState extends State<HomePage> {
-  List articles = [];
-  bool loading = true;
-  String weather = "Loading...";
+class _HeadlinesScreenState extends State<HeadlinesScreen> {
+  late Future<List<Map<String, dynamic>>> _future;
 
   @override
   void initState() {
     super.initState();
-    fetchNews();
-    fetchWeather();
+    _future = NewsService.topHeadlines(country: 'in', pageSize: 25);
   }
 
-  Future<void> fetchNews() async {
-    try {
-      // Replace with your NewsAPI key
-      const apiKey = "YOUR_NEWSAPI_KEY";
-      const url =
-          "https://newsapi.org/v2/top-headlines?country=in&apiKey=$apiKey";
-      final res = await http.get(Uri.parse(url));
-      final data = jsonDecode(res.body);
-
-      if (data["status"] == "ok") {
-        setState(() {
-          articles = data["articles"];
-          loading = false;
-        });
-      }
-    } catch (e) {
-      setState(() => loading = false);
-    }
-  }
-
-  Future<void> fetchWeather() async {
-    try {
-      // Replace with your OpenWeather API key
-      const apiKey = "YOUR_OPENWEATHER_KEY";
-      const url =
-          "https://api.openweathermap.org/data/2.5/weather?q=Mumbai&appid=$apiKey&units=metric";
-      final res = await http.get(Uri.parse(url));
-      final data = jsonDecode(res.body);
-
-      if (data["main"] != null) {
-        setState(() {
-          weather =
-              "${data["main"]["temp"].toString()}°C • ${data["weather"][0]["description"]}";
-        });
-      }
-    } catch (e) {
-      setState(() => weather = "Weather unavailable");
-    }
+  Future<void> _refresh() async {
+    setState(() {
+      _future = NewsService.topHeadlines(country: 'in', pageSize: 25);
+    });
+    await _future;
   }
 
   @override
   Widget build(BuildContext context) {
+    final date = DateFormat('EEE, d MMM').format(DateTime.now());
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Pulse News"),
+        title: const Text('Pulse News'),
         centerTitle: true,
+        actions: [
+          IconButton(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
       body: RefreshIndicator(
-        onRefresh: () async {
-          await fetchNews();
-          await fetchWeather();
-        },
-        child: ListView(
-          children: [
-            // Weather Card
-            Card(
-              margin: const EdgeInsets.all(12),
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    const Icon(Icons.cloud, size: 40, color: Colors.indigo),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        "Mumbai • $weather",
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w600),
-                      ),
+        onRefresh: _refresh,
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snap.hasError) {
+              return ListView(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      'Failed to load headlines:\n${snap.error}',
+                      style: TextStyle(color: Colors.red.shade700),
                     ),
-                  ],
-                ),
-              ),
-            ),
+                  ),
+                ],
+              );
+            }
+            final articles = snap.data ?? [];
 
-            // News List
-            if (loading)
-              const Center(
-                  child: Padding(
-                padding: EdgeInsets.all(40),
-                child: CircularProgressIndicator(),
-              ))
-            else
-              ...articles.map((article) {
+            return ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: articles.length + 1,
+              itemBuilder: (context, idx) {
+                if (idx == 0) {
+                  // Simple header card
+                  return Card(
+                    margin: const EdgeInsets.all(12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: ListTile(
+                      leading: const Icon(Icons.today),
+                      title: const Text('Top Headlines (India)'),
+                      subtitle: Text(date),
+                    ),
+                  );
+                }
+                final a = articles[idx - 1];
+                final title = (a['title'] ?? '') as String;
+                final desc = (a['description'] ?? '') as String;
+                final src = (a['source']?['name'] ?? '') as String;
+                final url = (a['url'] ?? '') as String;
+                final img = (a['urlToImage'] ?? '') as String;
+
                 return GestureDetector(
                   onTap: () async {
-                    final url = article["url"];
-                    if (await canLaunchUrl(Uri.parse(url))) {
-                      launchUrl(Uri.parse(url),
+                    final uri = Uri.tryParse(url);
+                    if (uri != null && await canLaunchUrl(uri)) {
+                      await launchUrl(uri,
                           mode: LaunchMode.externalApplication);
                     }
                   },
                   child: Card(
-                    margin:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    elevation: 3,
+                    margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 3,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (article["urlToImage"] != null)
+                        if (img.isNotEmpty)
                           ClipRRect(
                             borderRadius: const BorderRadius.vertical(
                                 top: Radius.circular(16)),
                             child: CachedNetworkImage(
-                              imageUrl: article["urlToImage"],
+                              imageUrl: img,
                               height: 200,
                               width: double.infinity,
                               fit: BoxFit.cover,
-                              placeholder: (c, s) => Container(
+                              placeholder: (_, __) => Container(
+                                  height: 200, color: Colors.grey[300]),
+                              errorWidget: (_, __, ___) => Container(
                                 height: 200,
-                                color: Colors.grey[300],
-                              ),
-                              errorWidget: (c, s, e) => Container(
-                                height: 200,
-                                color: Colors.grey,
-                                child: const Icon(Icons.broken_image),
+                                color: Colors.grey[200],
+                                child: const Center(
+                                    child: Icon(Icons.image_not_supported)),
                               ),
                             ),
                           ),
@@ -174,25 +159,20 @@ class _HomePageState extends State<HomePage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                article["title"] ?? "No title",
+                                title.isEmpty ? 'Untitled' : title,
                                 style: const TextStyle(
-                                    fontSize: 16, fontWeight: FontWeight.bold),
+                                    fontSize: 16, fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 6),
-                              Text(
-                                article["description"] ?? "",
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                article["publishedAt"] != null
-                                    ? DateFormat.yMMMd().add_jm().format(
-                                        DateTime.parse(article["publishedAt"]))
-                                    : "",
-                                style: TextStyle(
-                                    fontSize: 12, color: Colors.grey.shade600),
-                              ),
+                              if (desc.isNotEmpty)
+                                Text(desc,
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 8),
+                              if (src.isNotEmpty)
+                                Text(src,
+                                    style: TextStyle(
+                                        fontSize: 12, color: Colors.grey[700])),
                             ],
                           ),
                         ),
@@ -200,8 +180,9 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 );
-              }).toList(),
-          ],
+              },
+            );
+          },
         ),
       ),
     );
