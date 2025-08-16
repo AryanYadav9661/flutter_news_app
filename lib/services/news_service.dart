@@ -1,24 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart' as env;
 
 const String _baseUrl = 'https://newsapi.org/v2';
 
 class NewsService {
   final String apiKey;
 
-  NewsService() : apiKey = _loadApiKey();
-
-  static String _loadApiKey() {
-    const fromDefine = String.fromEnvironment('NEWS_API_KEY', defaultValue: '');
-    if (fromDefine.isNotEmpty) return fromDefine;
-
-    final fromEnv = env.dotenv.maybeGet('NEWS_API_KEY') ?? '';
-    if (fromEnv.isNotEmpty) return fromEnv;
-
-    throw Exception(
-        'Missing NEWS_API_KEY. Add to .env or pass with --dart-define.');
-  }
+  NewsService() : apiKey = _1fa0223b03bc45a28eeaaa50dc305ec4();
 
   Future<List<Map<String, dynamic>>> fetchTopHeadlines({
     String country = 'in',
@@ -43,3 +31,6 @@ class NewsService {
     return list.cast<Map<String, dynamic>>();
   }
 }
+
+// ignore: camel_case_types
+class _1fa0223b03bc45a28eeaaa50dc305ec4 {}

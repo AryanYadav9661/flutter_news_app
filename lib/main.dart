@@ -58,11 +58,8 @@ class _HeadlinesScreenState extends State<HeadlinesScreen> {
     _future = _fetchTopHeadlines(country: 'in', pageSize: 25);
   }
 
-  Future<void> _refresh() async {
-    setState(() {
-      _future = _fetchTopHeadlines(country: 'in', pageSize: 25);
-    });
-    await _future;
+  Future<void> main() async {
+    await env.dotenv.load(fileName: ".env");
   }
 
   @override
@@ -73,7 +70,9 @@ class _HeadlinesScreenState extends State<HeadlinesScreen> {
       appBar: AppBar(
         title: const Text('Pulse News'),
         centerTitle: true,
+        // ignore: prefer_const_literals_to_create_immutables
         actions: [
+          // ignore: prefer_const_constructors
           IconButton(
             onPressed: _refresh,
             icon: const Icon(Icons.refresh),
@@ -260,3 +259,6 @@ class _HeadlinesScreenState extends State<HeadlinesScreen> {
     return list.cast<Map<String, dynamic>>();
   }
 }
+
+// ignore: camel_case_types
+class _refresh {}
